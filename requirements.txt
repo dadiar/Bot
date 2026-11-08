@@ -1,0 +1,11 @@
+TikTokLive>=7.0
+playwright>=1.45
+PyYAML>=6.0
+yt-dlp
+rapidocr-onnxruntime>=1.2.3
+Pillow
+numpy
+# optional, only if audio_enabled: true
+faster-whisper>=1.0
+# tests
+pytest
