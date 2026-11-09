@@ -1,6 +1,8 @@
 # Copy to config.yaml and edit.  Never commit config.yaml or the profile/ folder.
 
-streamer: "THEIR_TIKTOK_USERNAME"   # without the @
+# Where the stream is. Use ONE of these:
+stream_url: "https://www.youtube.com/watch?v=u576qOKSTAk"   # YouTube (or any link yt-dlp understands)
+# streamer: "THEIR_TIKTOK_USERNAME"                          # TikTok username, without the @
 
 # dry-run : detect + print codes, never touches the browser (START HERE)
 # confirm : asks Y/n in the terminal before each submit
@@ -11,7 +13,9 @@ min_seconds_between_attempts: 1.0
 
 # ---- where to listen -------------------------------------------------------
 chat_enabled: true                   # fastest source (~instant)
-trusted_chat_users: []               # [] = only the streamer's own messages; ["*"] = anyone (trolls will spam fake codes)
+# TikTok: [] = only the streamer's messages. YouTube: channel owner + moderators are always trusted;
+# add other display names here. ["*"] = anyone (trolls will spam fake codes).
+trusted_chat_users: []
 
 ocr_enabled: true                    # reads codes shown on screen (~0.5-1.5s lag)
 ocr_fps: 2

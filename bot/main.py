@@ -82,15 +82,23 @@ async def run(cfg: Config, args: argparse.Namespace) -> None:
                 return
             await asyncio.sleep(cfg.min_seconds_between_attempts)
 
+    page_url = cfg.stream_url or sources.tiktok_live_url(cfg.streamer)
+    yt_id = sources.youtube_video_id(page_url) if "youtu" in page_url else None
+    log.info("Watching %s", page_url)
+
     tasks = [asyncio.create_task(worker())]
     if cfg.chat_enabled:
-        tasks.append(asyncio.create_task(sources.run_chat(cfg.streamer, cfg.trusted_chat_users, on_text)))
+        if yt_id:
+            tasks.append(asyncio.create_task(sources.run_youtube_chat(yt_id, cfg.trusted_chat_users, on_text)))
+        elif "tiktok" in page_url:
+            tasks.append(asyncio.create_task(
+                sources.run_chat(cfg.streamer, cfg.trusted_chat_users, on_text)))
     if cfg.ocr_enabled:
         tasks.append(asyncio.create_task(sources.run_ocr(
-            cfg.streamer, on_text, cfg.ocr_keywords, cfg.ocr_fps, cfg.ocr_region, args.test_input)))
+            page_url, on_text, cfg.ocr_keywords, cfg.ocr_fps, cfg.ocr_region, args.test_input)))
     if cfg.audio_enabled:
         tasks.append(asyncio.create_task(sources.run_audio(
-            cfg.streamer, on_text, cfg.whisper_model, stream_url=args.test_input)))
+            page_url, on_text, cfg.whisper_model, stream_url=args.test_input)))
     log.info("Running in %s mode. Ctrl+C to stop.", cfg.mode.upper())
     try:
         # Stop when the worker finishes (success) — everything else runs forever.

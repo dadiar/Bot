@@ -1,6 +1,6 @@
-# TikTok Live code-sniper → auto-redeem
+# Live-stream code-sniper → auto-redeem (YouTube + TikTok)
 
-Watches a TikTok LIVE and, the moment a redeem code appears, types it into the redeem page for you
+Watches a YouTube or TikTok LIVE and, the moment a redeem code appears, types it into the redeem page for you
 in a browser that is already logged in and waiting.
 
 ```
@@ -21,7 +21,7 @@ playwright install chromium
 cp config.example.yaml config.yaml                        # then edit it
 ```
 
-1. Set `streamer` and `redeem.url` in `config.yaml`.
+1. Set `stream_url` (e.g. the YouTube live link) or `streamer` (TikTok username), and `redeem.url`, in `config.yaml`.
 2. `python -m bot login` — a browser opens. Log in to the site by hand, go to the page with the code box,
    press Enter in the terminal. Your session is saved in `profile/`.
 3. `python -m bot check` — confirms the code box is found. If not, set `redeem.code_input`
@@ -34,6 +34,16 @@ cp config.example.yaml config.yaml                        # then edit it
 
 Tip: `python -m bot scan-text "the code is FREE4829XQ"` shows what the detector extracts from any text.
 
+## YouTube notes
+- Video/OCR goes through `yt-dlp`. YouTube changes often: if it fails to resolve the stream, run
+  `pip install -U yt-dlp` first. YouTube may also ask for cookies/sign-in on some networks or streams
+  (see the yt-dlp docs on `--cookies-from-browser`).
+- Chat uses `pytchat` (no API key). Only the channel owner and moderators are trusted by default.
+- YouTube live streams have their own delay (often 3–20 s). The bot sees the same delayed picture you would,
+  so its advantage is reaction time, not seeing it earlier.
+- If the code is only ever shown on screen, the OCR source is the one that matters. Set `ocr_region`
+  to the part of the screen where the code appears to make it faster and more accurate.
+
 ## What makes it fast
 - The browser is parked on the redeem page with the box located, so a code costs only fill + Enter (~40 ms in testing).
 - Chat is near-instant. On-screen OCR adds roughly 0.5–1.5 s. Spoken codes are slowest and least reliable.
@@ -45,9 +55,9 @@ Tip: `python -m bot scan-text "the code is FREE4829XQ"` shows what the detector 
 - Screenshot of every attempt in `logs/screens/`, full log in `logs/bot.log`.
 
 ## Be aware
-- **Not tested against the real TikTok or the real redeem site** (I had no access). Tested here: the detector,
+- **Not tested against the real TikTok/YouTube streams or the real redeem site** (the dev sandbox couldn't reach them). Tested here: the detector,
   the browser flow against a mock page, and ffmpeg → OCR → detect → redeem on a synthetic video. Expect to tweak selectors.
-- TikTok's unofficial live APIs change often. If chat or the stream URL stops working, `pip install -U TikTokLive yt-dlp`.
+- TikTok's and YouTube's unofficial live APIs change often. If chat or the stream stops working, `pip install -U TikTokLive pytchat yt-dlp`.
 - Automating a website or scraping TikTok may be against their terms. Read the redeem site's terms, use your own
   account only, and keep `max_attempts` low. Hammering wrong codes can get an account flagged.
 - Don't run it headless: if the site shows a captcha or logs you out, you need to see it.

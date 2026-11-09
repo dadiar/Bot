@@ -52,22 +52,64 @@ async def run_chat(username: str, trusted: list[str], on_text: OnText) -> None:
         delay = min(delay * 1.5, 30.0)
 
 
+# ------------------------------------------------------------------ YouTube chat
+async def run_youtube_chat(video_id: str, trusted: list[str], on_text: OnText) -> None:
+    """Watch YouTube live chat (no API key needed, via pytchat). Only the channel owner,
+    moderators, and names in `trusted` are scanned; ["*"] = anyone."""
+    import pytchat
+
+    allowed = {u.lstrip("@").lower() for u in trusted}
+    anyone = "*" in allowed
+    delay = 5.0
+    while True:
+        try:
+            chat = await asyncio.to_thread(pytchat.create, video_id=video_id)
+            log.info("Connected to YouTube live chat (%s)", video_id)
+            delay = 5.0
+            while chat.is_alive():
+                items = await asyncio.to_thread(lambda: list(chat.get().sync_items()))
+                for item in items:
+                    a = item.author
+                    name = (a.name or "").lstrip("@").lower()
+                    if anyone or a.isChatOwner or a.isChatModerator or name in allowed:
+                        await on_text(item.message, "chat")
+                await asyncio.sleep(0.5)
+            log.info("YouTube chat ended; reconnecting")
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            log.info("YouTube chat not connected (%s: %s); retrying in %.0fs", type(exc).__name__, exc, delay)
+        await asyncio.sleep(delay)
+        delay = min(delay * 1.5, 30.0)
+
+
 # ------------------------------------------------------------------ stream URL
-async def resolve_stream_url(username: str) -> str:
-    """Ask yt-dlp for the live stream's direct (HLS/FLV) URL."""
+async def resolve_stream_url(page_url: str) -> str:
+    """Ask yt-dlp for a live page's direct (HLS/FLV) media URL. Works for TikTok and YouTube."""
     import yt_dlp
 
     def _go() -> str:
         opts = {"quiet": True, "no_warnings": True, "format": "best"}
         with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(f"https://www.tiktok.com/@{username.lstrip('@')}/live", download=False)
-            return info["url"]
+            return ydl.extract_info(page_url, download=False)["url"]
 
     return await asyncio.to_thread(_go)
 
 
-async def _stream_source(username: str, override: str | None) -> str:
-    return override or await resolve_stream_url(username)
+async def _stream_source(page_url: str, override: str | None) -> str:
+    return override or await resolve_stream_url(page_url)
+
+
+def tiktok_live_url(username: str) -> str:
+    return f"https://www.tiktok.com/@{username.lstrip('@')}/live"
+
+
+def youtube_video_id(url: str) -> str | None:
+    """Extract the video id from watch?v=, youtu.be/, /live/ or /embed/ URLs."""
+    import re
+
+    m = re.search(r"(?:v=|youtu\.be/|/live/|/embed/|/shorts/)([A-Za-z0-9_-]{11})", url)
+    return m.group(1) if m else None
 
 
 def _require_ffmpeg() -> str:
@@ -95,7 +137,7 @@ def _split_jpegs(buf: bytearray) -> list[bytes]:
 
 
 async def run_ocr(
-    username: str,
+    page_url: str,
     on_text: OnText,
     keywords: list[str],
     fps: float = 2.0,
@@ -136,7 +178,7 @@ async def run_ocr(
     try:
         while True:
             try:
-                url = await _stream_source(username, stream_url)
+                url = await _stream_source(page_url, stream_url)
                 log.info("OCR: watching video stream")
                 pace = ["-re"] if stream_url else []  # test files: play at real-time speed
                 proc = await asyncio.create_subprocess_exec(
@@ -170,7 +212,7 @@ async def run_ocr(
 
 # ------------------------------------------------------------------------- audio
 async def run_audio(
-    username: str,
+    page_url: str,
     on_text: OnText,
     model_size: str = "base",
     window_s: float = 6.0,
@@ -194,7 +236,7 @@ async def run_audio(
 
     while True:
         try:
-            url = await _stream_source(username, stream_url)
+            url = await _stream_source(page_url, stream_url)
             log.info("ASR: listening to stream audio")
             proc = await asyncio.create_subprocess_exec(
                 ffmpeg, "-loglevel", "error", *(["-re"] if stream_url else []), "-i", url,

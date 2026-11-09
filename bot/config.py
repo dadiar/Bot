@@ -10,7 +10,8 @@ from .redeemer import RedeemConfig
 
 @dataclass
 class Config:
-    streamer: str
+    streamer: str = ""  # TikTok username (only needed for TikTok)
+    stream_url: str = ""  # full page URL, e.g. a YouTube live link. Overrides `streamer`.
     mode: str = "dry-run"  # dry-run | confirm | auto
     max_attempts: int = 5  # hard cap on codes submitted per run (protects your account)
     min_seconds_between_attempts: float = 1.0
@@ -41,9 +42,11 @@ class Config:
 def load_config(path: str | Path) -> Config:
     raw = yaml.safe_load(Path(path).read_text()) or {}
     redeem_raw = raw.pop("redeem", {}) or {}
-    cfg = Config(**raw, redeem=RedeemConfig(**redeem_raw))
+    cfg = Config(**raw, redeem=RedeemConfig(**{"url": "", **redeem_raw}))
     if cfg.mode not in {"dry-run", "confirm", "auto"}:
         raise ValueError("mode must be dry-run, confirm or auto")
+    if not cfg.streamer and not cfg.stream_url:
+        raise ValueError("set `stream_url` (e.g. a YouTube live link) or `streamer` (TikTok username)")
     if not cfg.redeem.url:
         raise ValueError("redeem.url is required")
     return cfg
