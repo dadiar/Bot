@@ -1,69 +1,78 @@
-# Live-stream code-sniper → auto-redeem (YouTube + TikTok)
+# Live code bot
 
-Watches a YouTube or TikTok LIVE and, the moment a redeem code appears, types it into the redeem page for you
-in a browser that is already logged in and waiting.
+Watches a YouTube live. When the streamer shows a code on screen (or types it in chat, or says it),
+the bot reads it and claims it **instantly in all 4 of your account tabs at once**
+(2k flex, 2k pro, 50k flex, 50k pro). Whichever account the code is for gets claimed.
 
-```
- TikTok live ──┬─ chat (streamer's messages) ──┐
-               ├─ video frames → OCR ──────────┼─► code detector ─► browser (fill + submit)
-               └─ audio → Whisper (optional) ──┘     (dedupe, filters)   already logged in
-```
+It runs on **your computer**, because it uses your logged-in browser.
 
-Run it **on your own computer** (it needs a visible browser you can log in with).
+## Setup (once)
 
-## Setup
+You need Python and ffmpeg installed. Then:
 
 ```bash
-python -m venv .venv && source .venv/bin/activate        # Windows: .venv\Scripts\activate
+git clone -b ccr-aa7e36e8-2p1a4x https://github.com/dadiar/Bot
+cd Bot
 pip install -r requirements.txt
 playwright install chromium
-# ffmpeg must be on your PATH (needed for the video/audio sources)
-cp config.example.yaml config.yaml                        # then edit it
+cp config.example.yaml config.yaml
 ```
 
-1. Set `stream_url` (e.g. the YouTube live link) or `streamer` (TikTok username), and `redeem.url`, in `config.yaml`.
-2. `python -m bot login` — a browser opens. Log in to the site by hand, go to the page with the code box,
-   press Enter in the terminal. Your session is saved in `profile/`.
-3. `python -m bot check` — confirms the code box is found. If not, set `redeem.code_input`
-   (right-click the box in your browser → Inspect → copy a CSS selector).
-4. `python -m bot test-code SOMEFAKECODE` — submits a fake code so you can see what a *failure* looks like,
-   then set `success_selector` / `error_selector` so the bot can tell the outcomes apart.
-5. `python -m bot run` — starts in **dry-run**: it prints every code it would have submitted but submits nothing.
-   Watch a real live this way first and tighten `code_pattern` until it only fires on real codes.
-6. When you trust it: `python -m bot run --mode auto` (or `confirm` to approve each one with Enter).
+Open `config.yaml` and paste in:
+- the YouTube live link
+- the redeem page link for each of your 4 accounts
 
-Tip: `python -m bot scan-text "the code is FREE4829XQ"` shows what the detector extracts from any text.
+Then log in once:
 
-## YouTube notes
-- Video/OCR goes through `yt-dlp`. YouTube changes often: if it fails to resolve the stream, run
-  `pip install -U yt-dlp` first. YouTube may also ask for cookies/sign-in on some networks or streams
-  (see the yt-dlp docs on `--cookies-from-browser`).
-- Chat uses `pytchat` (no API key). Only the channel owner and moderators are trusted by default.
-- YouTube live streams have their own delay (often 3–20 s). The bot sees the same delayed picture you would,
-  so its advantage is reaction time, not seeing it earlier.
-- If the code is only ever shown on screen, the OCR source is the one that matters. Set `ocr_region`
-  to the part of the screen where the code appears to make it faster and more accurate.
+```bash
+python -m bot login
+```
 
-## What makes it fast
-- The browser is parked on the redeem page with the box located, so a code costs only fill + Enter (~40 ms in testing).
-- Chat is near-instant. On-screen OCR adds roughly 0.5–1.5 s. Spoken codes are slowest and least reliable.
+A browser opens with your 4 tabs. Log in to TopStep, then press Enter in the terminal.
+Your login is saved, so you don't do this again.
 
-## Safety rails (on by default)
-- Only the **streamer's own** chat messages are trusted (anyone else could post fake codes).
-- A code is never submitted twice, and a code 1 character different from one already seen is skipped (OCR misreads).
-- `max_attempts` hard cap per run, delay between attempts, stops after the first success.
-- Screenshot of every attempt in `logs/screens/`, full log in `logs/bot.log`.
+## Every stream
 
-## Be aware
-- **Not tested against the real TikTok/YouTube streams or the real redeem site** (the dev sandbox couldn't reach them). Tested here: the detector,
-  the browser flow against a mock page, and ffmpeg → OCR → detect → redeem on a synthetic video. Expect to tweak selectors.
-- TikTok's and YouTube's unofficial live APIs change often. If chat or the stream stops working, `pip install -U TikTokLive pytchat yt-dlp`.
-- Automating a website or scraping TikTok may be against their terms. Read the redeem site's terms, use your own
-  account only, and keep `max_attempts` low. Hammering wrong codes can get an account flagged.
-- Don't run it headless: if the site shows a captcha or logs you out, you need to see it.
-- OCR/ASR can mix up `0/O`, `1/I`, `5/S`, `8/B`. If your codes have an obvious format, encode it in `code_pattern`.
+```bash
+python -m bot run
+```
+
+Leave it running. That's it. When a code appears you'll see:
+
+```
+*** CODE DETECTED via ocr: FREE4829XQ
+REDEEM FREE4829XQ [2k flex]  -> FAILURE (Invalid code)
+REDEEM FREE4829XQ [2k pro]   -> FAILURE (Invalid code)
+REDEEM FREE4829XQ [50k flex] -> SUCCESS
+REDEEM FREE4829XQ [50k pro]  -> FAILURE (Invalid code)
+*** SUCCESS — FREE4829XQ claimed on: 50k flex
+```
+
+**When he makes you guess the code:** type your guess in the terminal and press Enter.
+The bot fires it into all 4 tabs instantly. You do the guessing, the bot does the fast typing.
+
+Stop with **Ctrl+C**.
+
+## If something doesn't work
+
+| Problem | Fix |
+|---|---|
+| "code box not found" | Run `python -m bot check`. It screenshots each tab into `logs/`. If you're logged out, run `login` again. If the box isn't found, set `code_input` in `config.yaml` (right-click the box → Inspect). |
+| Can't open the YouTube stream | `pip install -U yt-dlp` (YouTube changes often). |
+| It detects random text as a code | Set `ocr_region` to the part of the screen where he shows codes. |
+| It's not sure if a claim worked | Run `python -m bot test-code FAKE123` to see what a failure looks like, then set `success_selector` / `error_selector`. |
+
+Every attempt is screenshotted to `logs/screens/` and logged to `logs/bot.log`.
+
+## Good to know
+- YouTube lives have a few seconds of delay. The bot sees the same picture you do; it wins by reacting in under a second.
+- Only the streamer's and moderators' chat messages count, so trolls can't trigger it with fake codes.
+- It never submits the same code twice. It's capped at `max_attempts` codes per run so a misread can't spam TopStep and get your account flagged.
+- Check TopStep's terms. Automating the site is your call, on your own account.
+- Tested here against mock redeem pages and a fake stream video. I couldn't reach YouTube or TopStep from my environment, so the first real run is the real test.
+
+## Also works with TikTok
+Use `streamer: their_username` instead of `stream_url`.
 
 ## Tests
-```bash
-pytest -q
-```
+`pytest -q`

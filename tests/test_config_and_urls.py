@@ -41,3 +41,22 @@ def test_config_requires_some_stream(tmp_path):
 def test_config_requires_redeem_url(tmp_path):
     with pytest.raises(ValueError, match="redeem.url"):
         load_config(write(tmp_path, "streamer: x\n"))
+
+
+def test_config_accounts_become_tabs(tmp_path):
+    cfg = load_config(write(tmp_path, """
+stream_url: https://youtu.be/u576qOKSTAk
+redeem:
+  error_selector: .err
+  accounts:
+    - {name: 2k flex, url: "https://x.test/2kflex"}
+    - {name: 50k pro, url: "https://x.test/50kpro", error_selector: .bad}
+"""))
+    tabs = cfg.redeem.tabs()
+    assert [t.name for t in tabs] == ["2k flex", "50k pro"]
+    assert tabs[0].error_selector == ".err" and tabs[1].error_selector == ".bad"
+
+
+def test_config_account_needs_url(tmp_path):
+    with pytest.raises(ValueError, match="no url"):
+        load_config(write(tmp_path, "streamer: x\nredeem: {accounts: [{name: a, url: ''}]}\n"))

@@ -110,12 +110,12 @@ class CodeDetector:
                 continue
             if self.require_letter and not any(c.isalpha() for c in code):
                 continue
-            code = self._apply_case(code)
+            code = self.apply_case(code)
             if code not in found:
                 found.append(code)
         return found
 
-    def _apply_case(self, code: str) -> str:
+    def apply_case(self, code: str) -> str:
         if self.submit_case == "upper":
             return code.upper()
         if self.submit_case == "lower":

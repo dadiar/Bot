@@ -1,48 +1,48 @@
-# Copy to config.yaml and edit.  Never commit config.yaml or the profile/ folder.
+# Copy this file to config.yaml. You only need to change the parts marked  <-- CHANGE
 
-# Where the stream is. Use ONE of these:
-stream_url: "https://www.youtube.com/watch?v=u576qOKSTAk"   # YouTube (or any link yt-dlp understands)
-# streamer: "THEIR_TIKTOK_USERNAME"                          # TikTok username, without the @
+# ===== 1. The stream ==========================================================
+stream_url: "https://www.youtube.com/watch?v=u576qOKSTAk"     # <-- CHANGE when he starts a new live
 
-# dry-run : detect + print codes, never touches the browser (START HERE)
-# confirm : asks Y/n in the terminal before each submit
-# auto    : submits instantly
-mode: dry-run
-max_attempts: 5                      # hard cap on codes submitted per run
-min_seconds_between_attempts: 1.0
+# ===== 2. Your 4 account tabs =================================================
+# One tab per account type. When a code is detected it is fired into ALL of them
+# at once, so whichever account the code is for gets claimed.
+redeem:
+  accounts:
+    - {name: "2k flex",  url: "https://PASTE-THE-2K-FLEX-REDEEM-PAGE-LINK"}    # <-- CHANGE
+    - {name: "2k pro",   url: "https://PASTE-THE-2K-PRO-REDEEM-PAGE-LINK"}     # <-- CHANGE
+    - {name: "50k flex", url: "https://PASTE-THE-50K-FLEX-REDEEM-PAGE-LINK"}   # <-- CHANGE
+    - {name: "50k pro",  url: "https://PASTE-THE-50K-PRO-REDEEM-PAGE-LINK"}    # <-- CHANGE
 
-# ---- where to listen -------------------------------------------------------
-chat_enabled: true                   # fastest source (~instant)
-# TikTok: [] = only the streamer's messages. YouTube: channel owner + moderators are always trusted;
-# add other display names here. ["*"] = anyone (trolls will spam fake codes).
+  # Only touch these if `python -m bot check` says it can't find the code box:
+  # code_input: 'input[name="promoCode"]'      # the code box
+  # submit_button: 'button[type=submit]'       # the claim button (empty = press Enter)
+  # success_selector: 'text=success'           # text that shows when it works
+  # error_selector: 'text=invalid'             # text that shows when it fails
+  headless: false
+  profile_dir: profile                         # your saved login lives here
+
+# ===== 3. How it behaves ======================================================
+mode: auto                  # auto = claims instantly | confirm = asks you first | dry-run = only prints
+max_attempts: 10            # max codes the bot submits by itself per run
+stop_after_success: false   # keep going after a win (he gives away several per stream)
+
+# ===== Advanced (you can ignore everything below) =============================
+ocr_enabled: true           # read codes he shows on screen
+ocr_fps: 2
+ocr_keywords: [code, promo, redeem, coupon]   # screen must show one of these words. [] = any text
+# ocr_region: [0.0, 0.5, 1.0, 0.5]   # only read part of the screen: [x, y, width, height] as fractions
+
+chat_enabled: true          # read codes he types in chat (only his + mods' messages count)
 trusted_chat_users: []
 
-ocr_enabled: true                    # reads codes shown on screen (~0.5-1.5s lag)
-ocr_fps: 2
-ocr_keywords: [code, promo, redeem, coupon]   # a frame only counts if it contains one of these. [] = any text
-# ocr_region: [0.0, 0.3, 1.0, 0.4]   # optional [x, y, w, h] crop as fractions of the frame (faster, fewer false hits)
-
-audio_enabled: false                 # best effort: spoken codes are error-prone; needs a Whisper model download
+audio_enabled: false        # listen for codes he says out loud (slower, less accurate)
 audio_keywords: [code, promo, redeem, coupon]
 whisper_model: base
 
-# ---- what counts as a code --------------------------------------------------
-# TIGHTEN THIS to the real format once you've seen a few codes, e.g. r"TS[A-Z0-9]{8}"
-code_pattern: '[A-Z0-9][A-Z0-9-]{5,19}'
-require_digit: true                  # ignore pure-letter words like "GIVEAWAY"
+code_pattern: '[A-Z0-9][A-Z0-9-]{5,19}'   # what a code looks like
+require_digit: true
 min_length: 6
 max_length: 20
-submit_case: upper                   # upper | lower | keep (use keep if codes are case sensitive)
-extra_stopwords: []
-
-# ---- the redeem page --------------------------------------------------------
-redeem:
-  url: "https://REPLACE_ME/the-page-with-the-code-box"
-  # CSS selectors. Leave code_input as-is to try the built-in guess; run `python -m bot check` to verify.
-  # code_input: 'input[name="promoCode"]'
-  # submit_button: 'button[type=submit]'      # empty = press Enter in the box
-  # success_selector: 'text=successfully'     # something that appears on success
-  # error_selector: '.error, text=invalid'    # something that appears on failure
-  result_timeout_s: 6
-  headless: false                    # keep false: you need to see it / log in / solve any captcha
-  profile_dir: profile               # your logged-in session lives here
+submit_case: upper          # upper | lower | keep
+min_seconds_between_attempts: 1.0
+max_manual_entries: 20      # max codes YOU can type in per run

@@ -5,6 +5,7 @@ import argparse
 import asyncio
 import logging
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -44,6 +45,7 @@ async def run(cfg: Config, args: argparse.Namespace) -> None:
     redeemer = Redeemer(cfg.redeem)
     queue: asyncio.Queue[Candidate] = asyncio.Queue()
     attempts = 0
+    manual = 0
 
     async def on_text(text: str, source: str) -> None:
         if source == "audio":
@@ -60,33 +62,61 @@ async def run(cfg: Config, args: argparse.Namespace) -> None:
         log.info("DRY-RUN: codes will be detected and printed but NOT submitted")
 
     async def worker() -> None:
-        nonlocal attempts
+        nonlocal attempts, manual
         while True:
             cand = await queue.get()
             if cfg.mode == "dry-run":
                 continue
-            if attempts >= cfg.max_attempts:
-                log.warning("max_attempts (%d) reached; ignoring %s", cfg.max_attempts, cand.code)
-                continue
-            if cfg.mode == "confirm" and not await _confirm(cand.code):
-                continue
-            attempts += 1
+            is_manual = cand.source == "manual"
+            if is_manual:
+                if manual >= cfg.max_manual_entries:
+                    log.warning("max_manual_entries (%d) reached; ignoring %s", cfg.max_manual_entries, cand.code)
+                    continue
+                manual += 1
+            else:
+                if attempts >= cfg.max_attempts:
+                    log.warning("max_attempts (%d) reached; ignoring %s", cfg.max_attempts, cand.code)
+                    continue
+                if cfg.mode == "confirm" and not await _confirm(cand.code):
+                    continue
+                attempts += 1
             lag = (time.time() - cand.seen_at) * 1000
-            res = await redeemer.redeem(cand.code)
-            log.info("REDEEM %s -> %s (%s) [detect->submit %.0f ms, fill+submit %.0f ms]",
-                     res.code, res.outcome.upper(), res.detail, lag, res.elapsed_ms)
-            if res.outcome in ("failure", "error"):
+            results = await redeemer.redeem(cand.code)
+            for res in results:
+                log.info("REDEEM %s [%s] -> %s (%s) [detect->submit %.0f ms, fill+submit %.0f ms]",
+                         res.code, res.account, res.outcome.upper(), res.detail, lag, res.elapsed_ms)
+            won = [r.account for r in results if r.outcome == "success"]
+            if won:
+                print(f"\n*** SUCCESS — {cand.code} claimed on: {', '.join(won)}\n", flush=True)
+                if cfg.stop_after_success:
+                    return
+            elif not is_manual and all(r.outcome in ("failure", "error") for r in results):
                 detector.forget(cand.code)  # allow a corrected re-read to try again
-            if res.outcome == "success":
-                print("\n*** SUCCESS — account redeemed. Stopping.\n", flush=True)
-                return
             await asyncio.sleep(cfg.min_seconds_between_attempts)
+
+    def start_manual_reader() -> None:
+        """You type a code (e.g. your guess) + Enter; it is fired into every tab at once.
+        Daemon thread so Ctrl+C never hangs waiting for a line."""
+        loop = asyncio.get_running_loop()
+
+        def read() -> None:
+            for line in sys.stdin:
+                code = detector.apply_case(line.strip())
+                if code:
+                    loop.call_soon_threadsafe(queue.put_nowait, Candidate(code=code, source="manual"))
+
+        threading.Thread(target=read, daemon=True).start()
+        print(">>> Type a code and press Enter to fire it into all tabs.", flush=True)
 
     page_url = cfg.stream_url or sources.tiktok_live_url(cfg.streamer)
     yt_id = sources.youtube_video_id(page_url) if "youtu" in page_url else None
     log.info("Watching %s", page_url)
 
     tasks = [asyncio.create_task(worker())]
+    # Typing assist only in auto mode (confirm mode already uses the terminal), and only
+    # from a real terminal so it can't be fed a list of guesses from a file or pipe.
+    if cfg.mode == "auto" and sys.stdin.isatty():
+        start_manual_reader()
     if cfg.chat_enabled:
         if yt_id:
             tasks.append(asyncio.create_task(sources.run_youtube_chat(yt_id, cfg.trusted_chat_users, on_text)))
@@ -101,7 +131,7 @@ async def run(cfg: Config, args: argparse.Namespace) -> None:
             page_url, on_text, cfg.whisper_model, stream_url=args.test_input)))
     log.info("Running in %s mode. Ctrl+C to stop.", cfg.mode.upper())
     try:
-        # Stop when the worker finishes (success) — everything else runs forever.
+        # Runs until Ctrl+C (or the first success, if stop_after_success is on).
         await tasks[0]
     finally:
         for t in tasks:
@@ -115,7 +145,7 @@ async def login(cfg: Config) -> None:
     cfg.redeem.headless = False
     r = Redeemer(cfg.redeem)
     await r.start()
-    print("\nLog in to the site in the browser window, navigate to the redeem page,")
+    print(f"\n{len(r.tabs)} tab(s) opened. Log in to the site in the browser window,")
     print("then come back here and press Enter to save the session and close it.")
     await asyncio.to_thread(input)
     await r.close()
@@ -124,11 +154,11 @@ async def login(cfg: Config) -> None:
 async def check(cfg: Config) -> None:
     r = Redeemer(cfg.redeem)
     await r.start()
-    ready = await r.prepare()
-    print(f"Page: {r.page.url}")
-    print(f"Code input found & visible: {ready}")
-    await r.page.screenshot(path="logs/check.png")
-    print("Screenshot saved to logs/check.png")
+    for tab in r.tabs:
+        ready = await tab.prepare(timeout_s=10)
+        shot = f"logs/check_{''.join(c if c.isalnum() else '_' for c in tab.spec.name)}.png"
+        await tab.page.screenshot(path=shot)
+        print(f"[{tab.spec.name}] {tab.page.url}\n    code box found: {ready}   screenshot: {shot}")
     await asyncio.sleep(3)
     await r.close()
 
@@ -136,7 +166,8 @@ async def check(cfg: Config) -> None:
 async def test_code(cfg: Config, code: str) -> None:
     r = Redeemer(cfg.redeem)
     await r.start()
-    print(await r.redeem(code))
+    for res in await r.redeem(code):
+        print(res)
     await r.close()
 
 

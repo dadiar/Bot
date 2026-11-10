@@ -5,7 +5,7 @@ import textwrap
 
 import pytest
 
-from bot.redeemer import RedeemConfig, Redeemer
+from bot.redeemer import AccountTab, RedeemConfig, Redeemer
 
 CHROMIUM = "/opt/pw-browsers/chromium"
 pytestmark = pytest.mark.skipif(not os.path.exists(CHROMIUM), reason="no chromium available")
@@ -53,8 +53,8 @@ def test_bad_then_good_code(cfg):
         r = Redeemer(cfg)
         await r.start()
         try:
-            bad = await r.redeem("NOPE0000")
-            good = await r.redeem("GOOD1234")  # form must have been reset after the failure
+            [bad] = await r.redeem("NOPE0000")
+            [good] = await r.redeem("GOOD1234")  # form must have been reset after the failure
             return bad, good
         finally:
             await r.close()
@@ -72,7 +72,8 @@ def test_click_submit_button(cfg):
         r = Redeemer(cfg)
         await r.start()
         try:
-            return await r.redeem("GOOD1234")
+            [res] = await r.redeem("GOOD1234")
+            return res
         finally:
             await r.close()
 
@@ -86,7 +87,8 @@ def test_unverified_when_no_result_selectors(cfg):
         r = Redeemer(cfg)
         await r.start()
         try:
-            return await r.redeem("GOOD1234")
+            [res] = await r.redeem("GOOD1234")
+            return res
         finally:
             await r.close()
 
@@ -100,9 +102,40 @@ def test_missing_input_reports_error(cfg):
         r = Redeemer(cfg)
         await r.start()  # logs a warning, doesn't raise
         try:
-            return await r.redeem("GOOD1234")
+            [res] = await r.redeem("GOOD1234")
+            return res
         finally:
             await r.close()
 
     res = run(go())
     assert res.outcome == "error"
+
+
+def test_one_code_fired_into_every_account_tab(tmp_path, cfg):
+    # Two "account" pages; each only accepts its own code, like 2k vs 50k giveaways.
+    pages = {}
+    for name, good in (("2k flex", "TWOK1234"), ("50k pro", "FIFTY999")):
+        p = tmp_path / f"{name.replace(' ', '_')}.html"
+        p.write_text(PAGE.replace("GOOD1234", good))
+        pages[name] = p.as_uri()
+    cfg.url = ""
+    cfg.accounts = [AccountTab(name=n, url=u) for n, u in pages.items()]
+
+    async def go():
+        r = Redeemer(cfg)
+        await r.start()
+        try:
+            assert len(r.tabs) == 2
+            return await r.redeem("FIFTY999")
+        finally:
+            await r.close()
+
+    results = {res.account: res.outcome for res in run(go())}
+    assert results == {"2k flex": "failure", "50k pro": "success"}
+
+
+def test_tab_selector_overrides_shared_one(cfg):
+    cfg.accounts = [AccountTab(name="a", url=cfg.url, code_input="#nope")]
+    [tab] = cfg.tabs()
+    assert tab.code_input == "#nope"
+    assert tab.success_selector == ".ok"  # inherited from shared config
